@@ -2,13 +2,10 @@ import axios from 'axios';
 
 const CHAVE_TOKEN = 'academia_token';
 
-const runtimeBaseURL = typeof window !== 'undefined' && window.location.origin
-  ? `${window.location.origin}/api`
-  : '/api';
 const envBaseURL = import.meta.env.VITE_API_URL?.trim() || '';
-const baseURL = envBaseURL && envBaseURL.includes('localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
-  ? runtimeBaseURL
-  : envBaseURL || '/api';
+const baseURL = import.meta.env.MODE === 'development'
+  ? envBaseURL || '/api'
+  : '/api';
 
 const api = axios.create({
   baseURL,
