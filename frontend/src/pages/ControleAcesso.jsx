@@ -24,7 +24,7 @@ import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { temPermissao } from '../lib/permissoes';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 function formatarHora(data) {
   return new Date(data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
