@@ -1,0 +1,13 @@
+{
+  "name": "ponte-catraca",
+  "version": "1.0.0",
+  "description": "Ponte entre catracas sem validação externa nativa e o sistema da academia",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  }
+}

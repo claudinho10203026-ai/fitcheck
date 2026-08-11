@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-graphite-950 text-white font-sans antialiased;
+}
+
+::selection {
+  @apply bg-ember-500/30;
+}
+
+/* números monetários/tabelas alinhados */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* scrollbar discreta */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-graphite-700 rounded-full;
+}
+
+/* foco visível para acessibilidade */
+:focus-visible {
+  outline: 2px solid #FF5A3C;
+  outline-offset: 2px;
+}
