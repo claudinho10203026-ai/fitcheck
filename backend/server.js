@@ -55,19 +55,19 @@ app.use('/api/caixa', requireAuth, caixaRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
 app.use('/api/agendamentos', requireAuth, agendamentosRoutes);
 
-// Tratamento de rota não encontrada
-app.use((req, res) => {
-  res.status(404).json({ erro: 'Rota não encontrada.' });
-});
 const path = require('path');
 
-// 1. Aponta para a pasta onde o build do frontend foi gerado (ex: dist ou build)
+// 1. Aponta para a pasta onde o build do frontend foi gerado (ex: dist)
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-// 2. Qualquer rota que NÃO seja de API vai entregar o index.html do frontend
+// 2. Rota SPA: qualquer rota que não seja API deve entregar o frontend
 app.get('*', (req, res) => {
+  if (req.originalUrl.startsWith('/api/')) {
+    return res.status(404).json({ erro: 'Rota não encontrada.' });
+  }
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`API da academia rodando em http://localhost:${PORT}`);
