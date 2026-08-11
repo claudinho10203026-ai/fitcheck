@@ -2,8 +2,16 @@ import axios from 'axios';
 
 const CHAVE_TOKEN = 'academia_token';
 
+const runtimeBaseURL = typeof window !== 'undefined' && window.location.origin
+  ? `${window.location.origin}/api`
+  : '/api';
+const envBaseURL = import.meta.env.VITE_API_URL?.trim() || '';
+const baseURL = envBaseURL && envBaseURL.includes('localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
+  ? runtimeBaseURL
+  : envBaseURL || '/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL,
 });
 
 // Anexa o token de login (JWT do nosso backend) em toda requisição.

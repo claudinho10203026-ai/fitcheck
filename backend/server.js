@@ -25,7 +25,21 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`A origem ${origin} não é permitida pelo CORS.`));
+    },
+  })
+);
 app.use(express.json({ limit: '8mb' })); // fotos de aluno chegam em base64 no body
 
 // Healthcheck simples (não exige login) - útil para checar se a API está de pé
