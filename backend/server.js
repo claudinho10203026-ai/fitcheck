@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 
 const { requireAuth } = require('./middleware/authMiddleware');
 
@@ -62,6 +64,39 @@ app.use('/api/caixa', requireAuth, caixaRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
 app.use('/api/agendamentos', requireAuth, agendamentosRoutes);
 app.use('/api/configuracao-pagamento', requireAuth, configuracaoPagamentoRoutes);
+
+// ============================================================================
+// SERVIR O FRONTEND (opcional, modo "um processo só")
+// ============================================================================
+// Se você rodou `npm run build` dentro de frontend/ (isso gera a pasta
+// frontend/dist), o backend serve o site pronto direto por aqui - assim dá
+// pra subir o sistema inteiro (site + API) com UM comando só (`npm start`
+// aqui no backend), o que é mais simples em hospedagens que só rodam um
+// processo Node (ex: VPS simples, Railway, Render).
+//
+// Se a pasta frontend/dist NÃO existir (você ainda não rodou o build, ou tá
+// rodando o frontend separado com `npm run dev` na porta 5173 - o normal em
+// desenvolvimento), essa parte simplesmente não faz nada e o backend continua
+// só como API, do jeito que já era.
+const frontendDist = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  console.log('[frontend] pasta frontend/dist encontrada - servindo o site junto com a API.');
+  app.use(express.static(frontendDist));
+
+  // Qualquer rota que não seja /api/* nem /iclock/* devolve o index.html,
+  // pra o React Router assumir a navegação no navegador (ex: dar F5 direto
+  // em /alunos não pode cair num 404 do Express).
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/iclock')) return next();
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  console.log(
+    '[frontend] pasta frontend/dist não encontrada - rodando só como API. ' +
+    'Rode "npm run build" dentro de frontend/ se quiser servir o site por aqui também, ' +
+    'ou rode o frontend separado com "npm run dev" (modo desenvolvimento).'
+  );
+}
 
 // Tratamento de rota não encontrada
 app.use((req, res) => {
