@@ -13,6 +13,7 @@ import Caixa from './pages/Caixa';
 import Relatorios from './pages/Relatorios';
 import Funcionarios from './pages/Funcionarios';
 import Planos from './pages/Planos';
+import ConfiguracaoPagamento from './pages/ConfiguracaoPagamento';
 import Agendamentos from './pages/Agendamentos';
 import ControleAcesso from './pages/ControleAcesso';
 
@@ -53,6 +54,7 @@ export default function App() {
 
       <Route path="/funcionarios" element={<ComLayout soAdmin><Funcionarios /></ComLayout>} />
       <Route path="/planos" element={<ComLayout soAdmin><Planos /></ComLayout>} />
+      <Route path="/configuracao-pagamento" element={<ComLayout soAdmin><ConfiguracaoPagamento /></ComLayout>} />
     </Routes>
   );
 }

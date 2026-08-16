@@ -5,8 +5,12 @@
  * Antes de usar em produção, confira a documentação atual em:
  * https://www.mercadopago.com.br/developers/pt/docs
  *
+ * Cada função recebe `credenciais` = { accessToken } da ACADEMIA que está
+ * fazendo a chamada (ver gatewayPagamento.js). Assim cada academia usa a
+ * própria conta Mercado Pago, e o dinheiro cai na conta certa.
+ *
  * Esse serviço é opcional: o sistema funciona 100% com baixa manual mesmo
- * sem configurar o Mercado Pago (basta não preencher o MERCADOPAGO_ACCESS_TOKEN).
+ * sem nenhuma academia configurar o Mercado Pago.
  */
 
 let MercadoPagoConfig, Payment;
@@ -16,24 +20,22 @@ try {
   // pacote pode não estar instalado se o gateway não for usado
 }
 
-function gatewayConfigurado() {
-  return Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN) && Boolean(MercadoPagoConfig);
+function gatewayConfigurado(credenciais) {
+  return Boolean(credenciais?.accessToken) && Boolean(MercadoPagoConfig);
 }
 
-function getClient() {
-  if (!gatewayConfigurado()) {
-    throw new Error(
-      'Mercado Pago não configurado. Defina MERCADOPAGO_ACCESS_TOKEN no .env do backend.'
-    );
+function getClient(credenciais) {
+  if (!gatewayConfigurado(credenciais)) {
+    throw new Error('Mercado Pago não configurado para esta academia. Configure em Configurações > Pagamento.');
   }
-  return new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN });
+  return new MercadoPagoConfig({ accessToken: credenciais.accessToken });
 }
 
 /**
  * Gera um boleto (bolbradesco) para uma mensalidade.
  */
-async function gerarBoleto({ valor, descricao, aluno, dataVencimento }) {
-  const client = getClient();
+async function gerarBoleto(credenciais, { valor, descricao, aluno, dataVencimento }) {
+  const client = getClient(credenciais);
   const payment = new Payment(client);
 
   const [nome, ...resto] = (aluno.nome || 'Aluno').split(' ');
@@ -67,8 +69,8 @@ async function gerarBoleto({ valor, descricao, aluno, dataVencimento }) {
 /**
  * Gera uma cobrança via PIX para uma mensalidade.
  */
-async function gerarPix({ valor, descricao, aluno }) {
-  const client = getClient();
+async function gerarPix(credenciais, { valor, descricao, aluno }) {
+  const client = getClient(credenciais);
   const payment = new Payment(client);
 
   const [nome, ...resto] = (aluno.nome || 'Aluno').split(' ');
@@ -99,8 +101,8 @@ async function gerarPix({ valor, descricao, aluno }) {
 /**
  * Consulta o status atual de um pagamento no Mercado Pago (usado pelo webhook).
  */
-async function consultarPagamento(paymentId) {
-  const client = getClient();
+async function consultarPagamento(credenciais, paymentId) {
+  const client = getClient(credenciais);
   const payment = new Payment(client);
   return payment.get({ id: paymentId });
 }

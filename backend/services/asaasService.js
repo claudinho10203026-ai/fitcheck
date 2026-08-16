@@ -6,34 +6,38 @@
  *   - Sandbox:    https://api-sandbox.asaas.com/v3   (chave começa com $aact_hmlg_)
  *   - Produção:   https://api.asaas.com/v3            (chave começa com $aact_prod_)
  *
+ * IMPORTANTE (mudou nesta versão): cada função aqui recebe `credenciais` =
+ * { apiKey, ambiente } da ACADEMIA que está fazendo a chamada (ver
+ * gatewayPagamento.js, que busca isso no banco). Antes, a chave vinha de uma
+ * única variável de ambiente compartilhada por todo o sistema - o que
+ * significava que, com mais de uma academia usando o sistema, o dinheiro de
+ * todas cairia na mesma conta Asaas. Agora cada academia usa a própria conta.
+ *
  * Esse serviço é opcional: o sistema funciona 100% com baixa manual mesmo sem
- * configurar o Asaas (basta não preencher o ASAAS_API_KEY).
+ * nenhuma academia configurar o Asaas.
  */
-
 const { supabaseAdmin } = require('../config/supabaseClient');
 
-function gatewayConfigurado() {
-  return Boolean(process.env.ASAAS_API_KEY);
+function gatewayConfigurado(credenciais) {
+  return Boolean(credenciais?.apiKey);
 }
 
-function baseUrl() {
-  return process.env.ASAAS_ENV === 'production'
-    ? 'https://api.asaas.com/v3'
-    : 'https://api-sandbox.asaas.com/v3';
+function baseUrl(credenciais) {
+  return credenciais?.ambiente === 'production' ? 'https://api.asaas.com/v3' : 'https://api-sandbox.asaas.com/v3';
 }
 
 /** Faz uma chamada autenticada à API do Asaas e já trata erro no formato deles. */
-async function chamarApi(method, caminho, corpo) {
-  if (!gatewayConfigurado()) {
-    throw new Error('Asaas não configurado. Defina ASAAS_API_KEY no .env do backend.');
+async function chamarApi(credenciais, method, caminho, corpo) {
+  if (!gatewayConfigurado(credenciais)) {
+    throw new Error('Asaas não configurado para esta academia. Configure em Configurações > Pagamento.');
   }
 
-  const resposta = await fetch(`${baseUrl()}${caminho}`, {
+  const resposta = await fetch(`${baseUrl(credenciais)}${caminho}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
       'User-Agent': 'SistemaAcademia/1.0',
-      access_token: process.env.ASAAS_API_KEY,
+      access_token: credenciais.apiKey,
     },
     body: corpo ? JSON.stringify(corpo) : undefined,
   });
@@ -52,10 +56,10 @@ async function chamarApi(method, caminho, corpo) {
  * ainda não existir (e salvando o id em alunos.asaas_customer_id para não
  * recriar a cada cobrança).
  */
-async function obterOuCriarCliente(aluno) {
+async function obterOuCriarCliente(credenciais, aluno) {
   if (aluno.asaas_customer_id) return aluno.asaas_customer_id;
 
-  const cliente = await chamarApi('POST', '/customers', {
+  const cliente = await chamarApi(credenciais, 'POST', '/customers', {
     name: aluno.nome,
     cpfCnpj: (aluno.cpf || '').replace(/\D/g, ''),
     email: aluno.email || undefined,
@@ -80,9 +84,9 @@ function formatarCobranca(cobranca) {
 }
 
 /** Gera um boleto real para a mensalidade. */
-async function gerarBoleto({ aluno, valor, descricao, dataVencimento, referenciaExterna }) {
-  const customerId = await obterOuCriarCliente(aluno);
-  const cobranca = await chamarApi('POST', '/payments', {
+async function gerarBoleto(credenciais, { aluno, valor, descricao, dataVencimento, referenciaExterna }) {
+  const customerId = await obterOuCriarCliente(credenciais, aluno);
+  const cobranca = await chamarApi(credenciais, 'POST', '/payments', {
     customer: customerId,
     billingType: 'BOLETO',
     value: Number(valor),
@@ -93,10 +97,10 @@ async function gerarBoleto({ aluno, valor, descricao, dataVencimento, referencia
   return formatarCobranca(cobranca);
 }
 
-/** Gera uma cobrança PIX real (com QR code) para a mensalidade. */
-async function gerarPix({ aluno, valor, descricao, referenciaExterna, dataVencimento }) {
-  const customerId = await obterOuCriarCliente(aluno);
-  const cobranca = await chamarApi('POST', '/payments', {
+/** Gera uma cobrança via PIX real (com QR code) para a mensalidade. */
+async function gerarPix(credenciais, { aluno, valor, descricao, referenciaExterna, dataVencimento }) {
+  const customerId = await obterOuCriarCliente(credenciais, aluno);
+  const cobranca = await chamarApi(credenciais, 'POST', '/payments', {
     customer: customerId,
     billingType: 'PIX',
     value: Number(valor),
@@ -105,7 +109,7 @@ async function gerarPix({ aluno, valor, descricao, referenciaExterna, dataVencim
     externalReference: referenciaExterna,
   });
 
-  const qrCode = await chamarApi('GET', `/payments/${cobranca.id}/pixQrCode`);
+  const qrCode = await chamarApi(credenciais, 'GET', `/payments/${cobranca.id}/pixQrCode`);
 
   return {
     ...formatarCobranca(cobranca),
@@ -115,9 +119,9 @@ async function gerarPix({ aluno, valor, descricao, referenciaExterna, dataVencim
 }
 
 /** Gera uma cobrança de cartão de crédito (cobrada na hora, sem salvar o cartão). */
-async function gerarCobrancaCartao({ aluno, valor, descricao, referenciaExterna, cartao, titular }) {
-  const customerId = await obterOuCriarCliente(aluno);
-  const cobranca = await chamarApi('POST', '/payments', {
+async function gerarCobrancaCartao(credenciais, { aluno, valor, descricao, referenciaExterna, cartao, titular }) {
+  const customerId = await obterOuCriarCliente(credenciais, aluno);
+  const cobranca = await chamarApi(credenciais, 'POST', '/payments', {
     customer: customerId,
     billingType: 'CREDIT_CARD',
     value: Number(valor),
@@ -144,14 +148,14 @@ async function gerarCobrancaCartao({ aluno, valor, descricao, referenciaExterna,
 }
 
 /** Consulta o status atual de uma cobrança (usado pro polling no caixa e pelo webhook). */
-async function consultarCobranca(paymentId) {
-  const cobranca = await chamarApi('GET', `/payments/${paymentId}`);
+async function consultarCobranca(credenciais, paymentId) {
+  const cobranca = await chamarApi(credenciais, 'GET', `/payments/${paymentId}`);
   return formatarCobranca(cobranca);
 }
 
 /** Busca (de novo) o QR code de uma cobrança PIX já criada. */
-async function buscarPixQrCode(paymentId) {
-  const qrCode = await chamarApi('GET', `/payments/${paymentId}/pixQrCode`);
+async function buscarPixQrCode(credenciais, paymentId) {
+  const qrCode = await chamarApi(credenciais, 'GET', `/payments/${paymentId}/pixQrCode`);
   return { payload: qrCode.payload, qr_code_base64: qrCode.encodedImage, expiracao: qrCode.expirationDate };
 }
 

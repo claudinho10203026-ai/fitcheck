@@ -33,7 +33,11 @@ router.get('/', requireModulo('mensalidades', 'visualizar'), async (req, res) =>
 
 // GET /api/mensalidades/gateway/status - qual gateway está ativo agora (pra UI decidir o que mostrar)
 router.get('/gateway/status', requireModulo('mensalidades', 'visualizar'), async (req, res) => {
-  res.json({ provedor: gateway.provedorAtivo(), configurado: gateway.gatewayConfigurado() });
+  const academiaId = req.funcionario.academia_id;
+  res.json({
+    provedor: await gateway.provedorAtivo(academiaId),
+    configurado: await gateway.gatewayConfigurado(academiaId),
+  });
 });
 
 // POST /api/mensalidades/gerar-carne - tela de "criação de carnê/boleto"
@@ -123,11 +127,11 @@ router.post('/:id/gateway/boleto', requireModulo('mensalidades', 'gerenciar'), a
 
     const mensalidade = await buscarMensalidadeDaAcademia(id, academiaId);
     if (!mensalidade) return res.status(404).json({ erro: 'Mensalidade não encontrada.' });
-    if (!gateway.gatewayConfigurado()) {
-      return res.status(400).json({ erro: 'Nenhum gateway de pagamento configurado (Asaas ou Mercado Pago).' });
+    if (!(await gateway.gatewayConfigurado(academiaId))) {
+      return res.status(400).json({ erro: 'Nenhum gateway de pagamento configurado. Configure em Configurações > Pagamento.' });
     }
 
-    const resultado = await gateway.gerarBoleto({
+    const resultado = await gateway.gerarBoleto(academiaId, {
       aluno: mensalidade.alunos,
       valor: mensalidade.valor,
       descricao: `Mensalidade ${mensalidade.numero_parcela}/${mensalidade.total_parcelas}`,
@@ -164,11 +168,11 @@ router.post('/:id/gateway/pix', requireModulo('mensalidades', 'gerenciar'), asyn
 
     const mensalidade = await buscarMensalidadeDaAcademia(id, academiaId);
     if (!mensalidade) return res.status(404).json({ erro: 'Mensalidade não encontrada.' });
-    if (!gateway.gatewayConfigurado()) {
-      return res.status(400).json({ erro: 'Nenhum gateway de pagamento configurado (Asaas ou Mercado Pago).' });
+    if (!(await gateway.gatewayConfigurado(academiaId))) {
+      return res.status(400).json({ erro: 'Nenhum gateway de pagamento configurado. Configure em Configurações > Pagamento.' });
     }
 
-    const resultado = await gateway.gerarPix({
+    const resultado = await gateway.gerarPix(academiaId, {
       aluno: mensalidade.alunos,
       valor: mensalidade.valor,
       descricao: `Mensalidade ${mensalidade.numero_parcela}/${mensalidade.total_parcelas}`,
@@ -210,7 +214,7 @@ router.post('/:id/gateway/cartao', requireModulo('mensalidades', 'gerenciar'), a
     const mensalidade = await buscarMensalidadeDaAcademia(id, academiaId);
     if (!mensalidade) return res.status(404).json({ erro: 'Mensalidade não encontrada.' });
 
-    const resultado = await gateway.gerarCobrancaCartao({
+    const resultado = await gateway.gerarCobrancaCartao(academiaId, {
       aluno: mensalidade.alunos,
       valor: mensalidade.valor,
       descricao: `Mensalidade ${mensalidade.numero_parcela}/${mensalidade.total_parcelas}`,
@@ -250,7 +254,7 @@ router.get('/:id/gateway/pix-qrcode', requireModulo('mensalidades', 'visualizar'
     const mensalidade = await buscarMensalidadeDaAcademia(id, req.funcionario.academia_id);
     if (!mensalidade?.gateway_payment_id) return res.status(404).json({ erro: 'Nenhuma cobrança PIX gerada para essa mensalidade.' });
 
-    const qr = await gateway.buscarPixQrCode(mensalidade.gateway_provider, mensalidade.gateway_payment_id);
+    const qr = await gateway.buscarPixQrCode(req.funcionario.academia_id, mensalidade.gateway_provider, mensalidade.gateway_payment_id);
     res.json(qr);
   } catch (err) {
     console.error(err);
@@ -268,7 +272,7 @@ router.get('/:id/gateway/status', requireModulo('mensalidades', 'visualizar'), a
 
     if (mensalidade.status === 'pago') return res.json({ status: 'pago' });
 
-    const resultado = await gateway.consultarCobranca(mensalidade.gateway_provider, mensalidade.gateway_payment_id);
+    const resultado = await gateway.consultarCobranca(academiaId, mensalidade.gateway_provider, mensalidade.gateway_payment_id);
     const pago = ['CONFIRMED', 'RECEIVED', 'approved'].includes(resultado.gateway_status);
 
     if (pago) {

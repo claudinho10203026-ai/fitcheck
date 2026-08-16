@@ -24,7 +24,7 @@ import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { temPermissao } from '../lib/permissoes';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 function formatarHora(data) {
   return new Date(data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -43,11 +43,19 @@ function formatarCpf(cpf) {
 const MARCAS = [
   { valor: 'control_id', label: 'Control iD' },
   { valor: 'intelbras', label: 'Intelbras' },
+  { valor: 'evo', label: 'EVO (Evo Sistemas Inteligentes)' },
   { valor: 'topdata', label: 'Topdata' },
   { valor: 'henry', label: 'Henry' },
   { valor: 'zkteco', label: 'ZKTeco' },
   { valor: 'outra', label: 'Outra / não sei ainda' },
 ];
+
+// Marcas que, pelo que a gente sabe hoje, tendem a NÃO ter a opção de
+// "validação externa" (perguntar antes de abrir) - o normal nelas é
+// funcionar por IP local ou empurrar (avisar depois). Isso só decide o
+// tipo de conexão sugerido por padrão ao trocar a marca no formulário; o
+// usuário pode mudar manualmente se souber que o modelo dele é diferente.
+const MARCAS_PROVAVELMENTE_IP_LOCAL = ['evo', 'zkteco', 'topdata', 'henry'];
 
 function nomeMarca(valor) {
   return MARCAS.find((m) => m.valor === valor)?.label || 'Outra';
@@ -99,7 +107,15 @@ function BadgeTipo({ tipo }) {
 // Instruções específicas por marca de catraca
 // ----------------------------------------------------------------------------
 
-function InstrucoesMarca({ marca, url, chave }) {
+function InstrucoesMarca({ marca, tipoConexao, url, chave }) {
+  const origemServidor = (() => {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return url;
+    }
+  })();
+
   const comum = (
     <div className="bg-graphite-950 border border-graphite-800 rounded-lg p-3 mb-3 font-mono text-xs text-steel-300 break-all">
       <p className="text-steel-500 mb-1">URL de verificação:</p>
@@ -109,65 +125,95 @@ function InstrucoesMarca({ marca, url, chave }) {
     </div>
   );
 
-  if (marca === 'control_id') {
+  // ---- Equipamento PERGUNTA ANTES de liberar (o ideal) ----
+  if (tipoConexao === 'validacao_externa') {
+    if (marca === 'control_id') {
+      return (
+        <div className="text-sm text-steel-300 space-y-2">
+          {comum}
+          <p>
+            Equipamentos Control iD (iDFace, iDFace Max, iDAccess, iDAccess Web) costumam ter um recurso
+            nativo de <strong className="text-white">validação externa</strong>: antes de liberar quem foi
+            reconhecido por facial ou digital, o próprio equipamento consulta uma URL e só abre se receber
+            "permitido".
+          </p>
+          <ol className="list-decimal list-inside space-y-1 text-steel-400">
+            <li>Cadastre o CPF de cada aluno como o código/matrícula da pessoa no equipamento.</li>
+            <li>No Configurador (ou na interface web do equipamento), procure por "Identificação" → "Validação externa" (o nome exato do menu pode variar por modelo/firmware).</li>
+            <li>Configure a URL acima, enviando o identificador da pessoa no parâmetro <code>cpf</code>.</li>
+            <li>Configure o cabeçalho/token de autenticação com a chave acima, se o seu modelo permitir header customizado.</li>
+            <li>Teste com um aluno cadastrado — o acesso aparece no histórico abaixo em poucos segundos.</li>
+          </ol>
+          <p className="text-steel-500 text-xs">
+            Os nomes exatos das telas variam por modelo/firmware — se algum passo não bater com o que você vê no seu equipamento, me avise com o modelo exato que eu ajusto o passo a passo.
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="text-sm text-steel-300 space-y-2">
         {comum}
         <p>
-          Equipamentos Control iD (iDFace, iDFace Max, iDAccess, iDAccess Web) costumam ter um recurso
-          nativo de <strong className="text-white">validação externa</strong>: antes de liberar quem foi
-          reconhecido por facial ou digital, o próprio equipamento consulta uma URL e só abre se receber
-          "permitido".
+          Procure no software/painel do equipamento por uma opção chamada algo como
+          <strong className="text-white"> "validação externa"</strong>, <strong className="text-white">"validação online"</strong> ou
+          <strong className="text-white"> "webhook"</strong> — geralmente em "Identificação" ou "Regras de acesso".
         </p>
         <ol className="list-decimal list-inside space-y-1 text-steel-400">
-          <li>Cadastre o CPF de cada aluno como o código/matrícula da pessoa no equipamento.</li>
-          <li>No Configurador (ou na interface web do equipamento), procure por "Identificação" → "Validação externa" (o nome exato do menu pode variar por modelo/firmware).</li>
-          <li>Configure a URL acima, enviando o identificador da pessoa no parâmetro <code>cpf</code>.</li>
-          <li>Configure o cabeçalho/token de autenticação com a chave acima, se o seu modelo permitir header customizado.</li>
-          <li>Teste com um aluno cadastrado — o acesso aparece no histórico abaixo em poucos segundos.</li>
+          <li>Cadastre o CPF de cada aluno como código/matrícula da pessoa no equipamento.</li>
+          <li>Aponte essa opção pra URL acima, enviando o CPF cadastrado como identificador.</li>
+          <li>Configure o cabeçalho/token de autenticação com a chave acima, se o equipamento permitir.</li>
         </ol>
         <p className="text-steel-500 text-xs">
-          Os nomes exatos das telas variam por modelo/firmware — se algum passo não bater com o que você vê no seu equipamento, me avise com o modelo exato que eu ajusto o passo a passo.
+          Me diga o modelo exato e, se tiver, o manual de integração — eu confirmo o passo a passo certo.
         </p>
       </div>
     );
   }
 
-  if (marca === 'intelbras') {
+  // ---- Equipamento AVISA DEPOIS (protocolo tipo ADMS/iClock) - experimental ----
+  if (tipoConexao === 'push_adms') {
     return (
       <div className="text-sm text-steel-300 space-y-2">
-        {comum}
-        <p>
-          Nos equipamentos Intelbras (linha SS, facial/biometria), o suporte a "validação online"
-          (chamar uma URL externa antes de liberar) varia por modelo e versão de firmware — alguns
-          suportam nativamente, outros só decidem localmente.
-        </p>
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-amber-200 text-xs">
+          <strong>Experimental:</strong> isso tenta um protocolo comum (tipo ADMS/iClock) usado por vários
+          leitores biométricos "de baixo custo" no Brasil. Não temos confirmação de que o seu equipamento
+          {marca === 'evo' ? ' EVO' : ''} fala exatamente esse protocolo — vale tentar, mas se não funcionar,
+          o caminho seguro é pedir o manual de integração pro suporte do fabricante/revenda.
+        </div>
+        <div className="bg-graphite-950 border border-graphite-800 rounded-lg p-3 font-mono text-xs text-steel-300 break-all">
+          <p className="text-steel-500 mb-1">Endereço do servidor (configure no painel do próprio equipamento):</p>
+          <p className="text-mint-400">{origemServidor}</p>
+          <p className="text-steel-500 mt-2">Porta: a mesma da URL acima (geralmente 443 se for https, ou a porta configurada no seu backend).</p>
+        </div>
         <ol className="list-decimal list-inside space-y-1 text-steel-400">
-          <li>Verifique com o instalador ou no manual do seu modelo se existe "validação online"/"webhook". Se existir, é a mesma lógica: aponta pra URL acima com o CPF cadastrado como identificador.</li>
-          <li>Se o seu modelo não tiver essa opção nativa, use a "ponte" genérica que já deixei pronta no projeto (pasta <code>integracoes/ponte-catraca</code>) — ela já sabe conversar com este sistema; falta só ligar com o SDK específico do seu modelo Intelbras.</li>
+          <li>Entre no IP do equipamento com a senha de admin, e procure onde se configura o "servidor"/"nuvem"/"ADMS" (nome exato varia).</li>
+          <li>Coloque o endereço acima como servidor.</li>
+          <li>Em cada aluno (tela Alunos → editar), preencha "Código do dispositivo" com o mesmo código/matrícula que você cadastrar para essa pessoa no equipamento (ou cadastre o próprio CPF como código no equipamento, se ele aceitar 11 dígitos).</li>
         </ol>
-        <p className="text-steel-500 text-xs">
-          Me manda o modelo exato (ex: SS 5530, SS 3541) e, se tiver, o manual de integração — eu completo a ponte com o protocolo certo.
-        </p>
+        <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-rose-200 text-xs">
+          <strong>Importante:</strong> nesse tipo de equipamento, ele decide sozinho e avisa o sistema DEPOIS
+          que a pessoa já passou — diferente da Control iD, que pergunta antes. Ou seja: isso registra no
+          histórico e avisa em vermelho se alguém bloqueado passou mesmo assim, mas não impede a passagem na
+          hora. Pra travar de verdade em tempo real, é preciso um equipamento que "pergunte antes" (validação
+          externa) — a Control iD, no seu caso, já cobre isso.
+        </div>
       </div>
     );
   }
 
-  // topdata, henry, zkteco, outra
+  // ---- ip_manual: sem protocolo confirmado ainda ----
   return (
     <div className="text-sm text-steel-300 space-y-2">
-      {comum}
       <p>
-        Não existe um protocolo único de catraca no Brasil — cada fabricante tem seu próprio SDK. O
-        caminho depende do que o seu equipamento suporta:
+        Ainda não temos um protocolo confirmado pra conectar esse equipamento automaticamente. Os campos de
+        IP/usuário/senha acima ficam só como sua anotação por enquanto.
       </p>
       <ol className="list-decimal list-inside space-y-1 text-steel-400">
-        <li>Se o software/equipamento tiver alguma opção de "validação externa", "validação online" ou "webhook", aponte-a pra URL acima, enviando o CPF cadastrado como identificador.</li>
-        <li>Se não tiver, use a "ponte" genérica em <code>integracoes/ponte-catraca</code> — ela já sabe conversar com este sistema; falta só ligar com o SDK do fabricante do seu equipamento (a parte que varia por marca).</li>
+        <li>Entre no IP do equipamento com a senha de admin e veja se existe alguma opção de "validação externa", "validação online", "webhook" ou "servidor ADMS/nuvem".</li>
+        <li>Se tiver "validação externa/online": troque o "Tipo de conexão" desta catraca pra essa opção e use a URL que aparece.</li>
+        <li>Se tiver "servidor ADMS/nuvem": troque pra "Avisa depois (tipo ADMS)" e siga aquelas instruções.</li>
+        <li>Se não achar nenhuma das duas: me manda o manual/modelo exato, ou peça pro suporte do fabricante o "manual de integração" — assim que eu (ou você) souber o protocolo, eu implemento certinho.</li>
       </ol>
-      <p className="text-steel-500 text-xs">
-        Me diga a marca/modelo exato e, se tiver, o manual de integração/SDK — eu completo a ponte com o protocolo certo.
-      </p>
     </div>
   );
 }
@@ -178,10 +224,32 @@ function InstrucoesMarca({ marca, url, chave }) {
 
 function ModalCatraca({ catraca, onFechar, onSalvo }) {
   const [form, setForm] = useState(
-    catraca || { nome: '', marca: 'control_id', modelo: '', local: '', sentido_padrao: 'ambos', observacoes: '' }
+    catraca || {
+      nome: '',
+      marca: 'control_id',
+      modelo: '',
+      local: '',
+      sentido_padrao: 'ambos',
+      observacoes: '',
+      tipo_conexao: 'validacao_externa',
+      ip: '',
+      porta: '',
+      usuario_admin: '',
+      senha_admin: '',
+    }
   );
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+
+  function mudarMarca(novaMarca) {
+    // Só sugere o tipo de conexão quando é catraca NOVA (edição não pisa na escolha que já foi feita).
+    const sugestao = !catraca?.id
+      ? MARCAS_PROVAVELMENTE_IP_LOCAL.includes(novaMarca)
+        ? 'push_adms'
+        : 'validacao_externa'
+      : form.tipo_conexao;
+    setForm({ ...form, marca: novaMarca, tipo_conexao: sugestao });
+  }
 
   async function salvar(e) {
     e.preventDefault();
@@ -206,8 +274,8 @@ function ModalCatraca({ catraca, onFechar, onSalvo }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-graphite-900 border border-graphite-800 rounded-xl p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-graphite-900 border border-graphite-800 rounded-xl p-6 w-full max-w-md my-8">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display text-lg font-semibold text-white">
             {catraca?.id ? 'Editar catraca' : 'Nova catraca'}
@@ -232,7 +300,7 @@ function ModalCatraca({ catraca, onFechar, onSalvo }) {
             <select
               className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-ember-500"
               value={form.marca}
-              onChange={(e) => setForm({ ...form, marca: e.target.value })}
+              onChange={(e) => mudarMarca(e.target.value)}
             >
               {MARCAS.map((m) => (
                 <option key={m.valor} value={m.valor}>
@@ -240,6 +308,19 @@ function ModalCatraca({ catraca, onFechar, onSalvo }) {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="text-sm text-steel-400 block mb-1">Tipo de conexão</label>
+            <select
+              className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-ember-500"
+              value={form.tipo_conexao}
+              onChange={(e) => setForm({ ...form, tipo_conexao: e.target.value })}
+            >
+              <option value="validacao_externa">Pergunta antes de liberar (validação externa)</option>
+              <option value="push_adms">Avisa depois, tipo ADMS/iClock (experimental)</option>
+              <option value="ip_manual">Não sei / ainda vou verificar</option>
+            </select>
+            <p className="text-steel-500 text-xs mt-1">Não sabe qual é? Deixe em "Não sei" e veja as instruções depois de salvar.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -273,6 +354,57 @@ function ModalCatraca({ catraca, onFechar, onSalvo }) {
               <option value="saida">Só saída</option>
             </select>
           </div>
+
+          {form.tipo_conexao !== 'validacao_externa' && (
+            <div className="bg-graphite-800/60 border border-graphite-700 rounded-lg p-3 space-y-3">
+              <p className="text-xs text-steel-400">
+                Anotação de conexão do equipamento (IP/admin) — pra você não perder essa informação. O
+                sistema não usa isso pra se conectar automaticamente ainda.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-steel-400 block mb-1">IP do equipamento</label>
+                  <input
+                    className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white text-sm placeholder-steel-500 focus:outline-none focus:border-ember-500"
+                    placeholder="192.168.0.50"
+                    value={form.ip || ''}
+                    onChange={(e) => setForm({ ...form, ip: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-steel-400 block mb-1">Porta</label>
+                  <input
+                    className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white text-sm placeholder-steel-500 focus:outline-none focus:border-ember-500"
+                    placeholder="80"
+                    value={form.porta || ''}
+                    onChange={(e) => setForm({ ...form, porta: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-steel-400 block mb-1">Usuário admin</label>
+                  <input
+                    className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white text-sm placeholder-steel-500 focus:outline-none focus:border-ember-500"
+                    placeholder="admin"
+                    value={form.usuario_admin || ''}
+                    onChange={(e) => setForm({ ...form, usuario_admin: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-steel-400 block mb-1">Senha admin</label>
+                  <input
+                    type="password"
+                    className="w-full bg-graphite-800 border border-graphite-700 rounded-lg px-3 py-2 text-white text-sm placeholder-steel-500 focus:outline-none focus:border-ember-500"
+                    placeholder={catraca?.tem_senha_admin ? '(salva - deixe vazio p/ manter)' : ''}
+                    value={form.senha_admin || ''}
+                    onChange={(e) => setForm({ ...form, senha_admin: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {erro && <p className="text-rose-400 text-sm">{erro}</p>}
           <div className="flex gap-2 pt-2">
             <button
@@ -470,7 +602,7 @@ function SecaoConfigurarCatraca({ podeGerenciar }) {
                     </div>
                     {expandidoId === c.id && (
                       <div className="border-t border-graphite-800 p-4">
-                        <InstrucoesMarca marca={c.marca} url={urlParaCatraca(c)} chave={chave} />
+                        <InstrucoesMarca marca={c.marca} tipoConexao={c.tipo_conexao} url={urlParaCatraca(c)} chave={chave} />
                       </div>
                     )}
                   </div>

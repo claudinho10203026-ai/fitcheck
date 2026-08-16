@@ -274,4 +274,3 @@ A resposta é um JSON simples: `{ "liberado": true/false, "motivo": "...", "alun
   mês) - é uma extensão possível de `backend/services/asaasService.js`, mas
   muda a forma como o carnê é gerado hoje (localmente, mês a mês), então não
   entrou nesta entrega para não arriscar o que já está funcionando.
-"# fitcheck" 

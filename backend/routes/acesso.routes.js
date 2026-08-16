@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/authMiddleware');
 const { requireModulo, requireAdmin } = require('../middleware/authorize');
 const { calcularAcesso, registrarAcesso } = require('../services/acessoService');
 const mensalidadeService = require('../services/mensalidadeService');
+const { criptografar, mascarar } = require('../services/criptografia');
 
 const router = express.Router();
 
@@ -308,7 +309,14 @@ router.post('/chave/gerar', requireAuth, requireAdmin, async (req, res) => {
 // nome/marca/local a cada equipamento físico e gerar a URL/instrução certa.
 // ============================================================================
 
-const MARCAS_VALIDAS = ['control_id', 'intelbras', 'topdata', 'henry', 'zkteco', 'outra'];
+const MARCAS_VALIDAS = ['control_id', 'intelbras', 'topdata', 'henry', 'zkteco', 'evo', 'outra'];
+const TIPOS_CONEXAO_VALIDOS = ['validacao_externa', 'push_adms', 'ip_manual'];
+
+// Nunca devolve a senha de admin em texto puro pro navegador - só se tem uma salva ou não.
+function sanitizarCatraca(catraca) {
+  const { senha_admin_cripto, ...resto } = catraca;
+  return { ...resto, tem_senha_admin: Boolean(senha_admin_cripto) };
+}
 
 // GET /api/acesso/catracas
 router.get('/catracas', requireAuth, requireModulo('acesso', 'visualizar'), async (req, res) => {
@@ -319,7 +327,7 @@ router.get('/catracas', requireAuth, requireModulo('acesso', 'visualizar'), asyn
       .eq('academia_id', req.funcionario.academia_id)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    res.json(data);
+    res.json((data || []).map(sanitizarCatraca));
   } catch (err) {
     console.error(err);
     // Se a migração 005 ainda não foi rodada, não derruba a tela.
@@ -330,9 +338,10 @@ router.get('/catracas', requireAuth, requireModulo('acesso', 'visualizar'), asyn
 // POST /api/acesso/catracas
 router.post('/catracas', requireAuth, requireModulo('acesso', 'gerenciar'), async (req, res) => {
   try {
-    const { nome, marca, modelo, local, sentido_padrao, observacoes } = req.body;
+    const { nome, marca, modelo, local, sentido_padrao, observacoes, tipo_conexao, ip, porta, usuario_admin, senha_admin } = req.body;
     if (!nome) return res.status(400).json({ erro: 'Dê um nome pra essa catraca (ex: "Catraca Entrada").' });
     if (marca && !MARCAS_VALIDAS.includes(marca)) return res.status(400).json({ erro: 'Marca inválida.' });
+    if (tipo_conexao && !TIPOS_CONEXAO_VALIDOS.includes(tipo_conexao)) return res.status(400).json({ erro: 'Tipo de conexão inválido.' });
 
     const { data, error } = await supabaseAdmin
       .from('catracas')
@@ -344,11 +353,16 @@ router.post('/catracas', requireAuth, requireModulo('acesso', 'gerenciar'), asyn
         local: local || null,
         sentido_padrao: sentido_padrao || 'ambos',
         observacoes: observacoes || null,
+        tipo_conexao: tipo_conexao || 'validacao_externa',
+        ip: ip || null,
+        porta: porta ? Number(porta) : null,
+        usuario_admin: usuario_admin || null,
+        senha_admin_cripto: senha_admin ? criptografar(senha_admin) : null,
       })
       .select()
       .single();
     if (error) throw error;
-    res.status(201).json(data);
+    res.status(201).json(sanitizarCatraca(data));
   } catch (err) {
     console.error(err);
     res.status(500).json({ erro: 'Erro ao cadastrar catraca.' });
@@ -358,19 +372,36 @@ router.post('/catracas', requireAuth, requireModulo('acesso', 'gerenciar'), asyn
 // PUT /api/acesso/catracas/:id
 router.put('/catracas/:id', requireAuth, requireModulo('acesso', 'gerenciar'), async (req, res) => {
   try {
-    const { nome, marca, modelo, local, sentido_padrao, ativa, observacoes } = req.body;
+    const { nome, marca, modelo, local, sentido_padrao, ativa, observacoes, tipo_conexao, ip, porta, usuario_admin, senha_admin } =
+      req.body;
     if (marca && !MARCAS_VALIDAS.includes(marca)) return res.status(400).json({ erro: 'Marca inválida.' });
+    if (tipo_conexao && !TIPOS_CONEXAO_VALIDOS.includes(tipo_conexao)) return res.status(400).json({ erro: 'Tipo de conexão inválido.' });
+
+    const atualizacao = {
+      nome,
+      marca,
+      modelo,
+      local,
+      sentido_padrao,
+      ativa,
+      observacoes,
+      tipo_conexao,
+      ip,
+      porta: porta ? Number(porta) : null,
+      usuario_admin,
+    };
+    if (senha_admin) atualizacao.senha_admin_cripto = criptografar(senha_admin);
 
     const { data, error } = await supabaseAdmin
       .from('catracas')
-      .update({ nome, marca, modelo, local, sentido_padrao, ativa, observacoes })
+      .update(atualizacao)
       .eq('id', req.params.id)
       .eq('academia_id', req.funcionario.academia_id)
       .select()
       .single();
     if (error) throw error;
     if (!data) return res.status(404).json({ erro: 'Catraca não encontrada.' });
-    res.json(data);
+    res.json(sanitizarCatraca(data));
   } catch (err) {
     console.error(err);
     res.status(500).json({ erro: 'Erro ao atualizar catraca.' });

@@ -13,6 +13,8 @@ import {
   Copy,
   Loader2,
   CheckCircle2,
+  AlertTriangle,
+  Receipt,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -158,7 +160,7 @@ function ModalFecharCaixa({ sessao, aoFechar, aoConfirmar }) {
   );
 }
 
-function ModalMovimentacao({ aberto, sessaoId, aoFechar, aoConfirmar }) {
+function ModalMovimentacao({ aberto, sessaoId, aoFechar, aoConfirmar, preSelecionado = null }) {
   const [tipo, setTipo] = useState('entrada');
   const [categoria, setCategoria] = useState('mensalidade');
   const [descricao, setDescricao] = useState('');
@@ -187,18 +189,30 @@ function ModalMovimentacao({ aberto, sessaoId, aoFechar, aoConfirmar }) {
       api.get('/caixa/formas-pagamento').then((res) => setFormas(res.data));
       setTipo('entrada');
       setCategoria('mensalidade');
-      setDescricao('');
-      setValor('');
       setFormaId('');
-      setAlunoSelecionado(null);
-      setMensalidadeId('');
       setErro('');
       setMostrandoPix(false);
       setDadosPix(null);
       setPagoPix(false);
+
+      if (preSelecionado) {
+        // Veio do painel de "mensalidades atrasadas" - já pula direto pra
+        // cobrança, sem precisar buscar o aluno de novo.
+        setAlunoSelecionado(preSelecionado.aluno);
+        setMensalidadeId(preSelecionado.mensalidade.id);
+        setValor(preSelecionado.mensalidade.valor);
+        setDescricao(
+          `Mensalidade ${preSelecionado.mensalidade.numero_parcela}/${preSelecionado.mensalidade.total_parcelas} - ${preSelecionado.aluno.nome}`
+        );
+      } else {
+        setDescricao('');
+        setValor('');
+        setAlunoSelecionado(null);
+        setMensalidadeId('');
+      }
     }
     return () => clearInterval(intervaloPixRef.current);
-  }, [aberto]);
+  }, [aberto, preSelecionado]);
 
   useEffect(() => {
     if (!buscaAluno || alunoSelecionado) return setOpcoesAluno([]);
@@ -521,6 +535,92 @@ function ModalMovimentacao({ aberto, sessaoId, aoFechar, aoConfirmar }) {
   );
 }
 
+function diasEmAtraso(dataVencimento) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const venc = new Date(`${dataVencimento}T00:00:00`);
+  return Math.max(0, Math.round((hoje - venc) / 86400000));
+}
+
+// Painel lateral do Caixa: mostra as mensalidades atrasadas (a mesma lista
+// que aparece em Mensalidades), filtrável por nome, com botão pra já abrir a
+// cobrança direto - sem precisar sair do Caixa e ir pra outra tela.
+function PainelMensalidadesAtrasadas({ sessaoAberta, aoCobrar }) {
+  const [lista, setLista] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState('');
+
+  async function carregar() {
+    try {
+      const { data } = await api.get('/mensalidades', { params: { status: 'atrasado' } });
+      setLista(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  useEffect(() => {
+    carregar();
+    const intervalo = setInterval(carregar, 20000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  const filtrada = busca
+    ? lista.filter((m) => m.alunos?.nome?.toLowerCase().includes(busca.toLowerCase()))
+    : lista;
+
+  return (
+    <div className="bg-graphite-900 border border-graphite-800 rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <AlertTriangle size={17} className="text-rose-400" />
+        <h2 className="font-display text-base font-semibold text-white">Mensalidades atrasadas</h2>
+      </div>
+      <p className="text-steel-500 text-xs mb-3">{lista.length} no total</p>
+
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-500" size={14} />
+        <input
+          className="w-full pl-9 pr-3 py-2 rounded-lg bg-graphite-800 border border-graphite-700 text-white text-sm placeholder-steel-500"
+          placeholder="Filtrar por nome..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </div>
+
+      {carregando ? (
+        <p className="text-steel-500 text-sm">Carregando...</p>
+      ) : filtrada.length === 0 ? (
+        <p className="text-steel-500 text-sm">{busca ? 'Nenhum resultado.' : 'Nenhuma mensalidade atrasada 🎉'}</p>
+      ) : (
+        <div className="space-y-2 max-h-[28rem] overflow-y-auto -mr-1 pr-1">
+          {filtrada.map((m) => (
+            <div key={m.id} className="bg-graphite-950 border border-graphite-800 rounded-lg p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{m.alunos?.nome}</p>
+                  <p className="text-steel-500 text-xs">
+                    {formatarMoeda(m.valor)} · {diasEmAtraso(m.data_vencimento)}d de atraso
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => aoCobrar({ aluno: m.alunos, mensalidade: m })}
+                disabled={!sessaoAberta}
+                title={!sessaoAberta ? 'Abra o caixa pra poder receber' : ''}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 bg-mint-500/10 hover:bg-mint-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-mint-400 border border-mint-500/20 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                <Receipt size={13} /> Receber
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Caixa() {
   const { funcionario } = useAuth();
   const podeGerenciar = temPermissao(funcionario, 'caixa', 'gerenciar');
@@ -530,6 +630,12 @@ export default function Caixa() {
   const [modalAbrir, setModalAbrir] = useState(false);
   const [modalFechar, setModalFechar] = useState(false);
   const [modalMovimentacao, setModalMovimentacao] = useState(false);
+  const [cobrancaPreSelecionada, setCobrancaPreSelecionada] = useState(null);
+
+  function abrirCobranca(dados) {
+    setCobrancaPreSelecionada(dados);
+    setModalMovimentacao(true);
+  }
 
   async function carregar() {
     setCarregando(true);
@@ -576,98 +682,115 @@ export default function Caixa() {
         )}
       </div>
 
-      {carregando ? (
-        <p className="text-steel-400 text-sm">Carregando...</p>
-      ) : !sessao ? (
-        <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-10 text-center">
-          <Wallet className="mx-auto text-steel-600 mb-3" size={32} />
-          <p className="text-steel-400 text-sm">Nenhuma sessão de caixa aberta no momento.</p>
-          <p className="text-steel-500 text-xs mt-1">Abra o caixa para começar a registrar pagamentos do dia.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          {carregando ? (
+            <p className="text-steel-400 text-sm">Carregando...</p>
+          ) : !sessao ? (
+            <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-10 text-center">
+              <Wallet className="mx-auto text-steel-600 mb-3" size={32} />
+              <p className="text-steel-400 text-sm">Nenhuma sessão de caixa aberta no momento.</p>
+              <p className="text-steel-500 text-xs mt-1">Abra o caixa para começar a registrar pagamentos do dia.</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
+                  <p className="text-steel-400 text-xs font-medium mb-1">Abertura</p>
+                  <p className="font-display text-xl font-semibold text-white tabular">
+                    {formatarMoeda(sessao.valor_abertura)}
+                  </p>
+                </div>
+                <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
+                  <p className="text-steel-400 text-xs font-medium mb-1">Entradas</p>
+                  <p className="font-display text-xl font-semibold text-mint-400 tabular">
+                    +{formatarMoeda(totalEntradas)}
+                  </p>
+                </div>
+                <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
+                  <p className="text-steel-400 text-xs font-medium mb-1">Saídas</p>
+                  <p className="font-display text-xl font-semibold text-rose-400 tabular">
+                    -{formatarMoeda(totalSaidas)}
+                  </p>
+                </div>
+                <div className="bg-graphite-900 border border-ember-500/30 rounded-2xl p-5">
+                  <p className="text-ember-400 text-xs font-medium mb-1">Saldo atual</p>
+                  <p className="font-display text-xl font-semibold text-white tabular">{formatarMoeda(saldoAtual)}</p>
+                </div>
+              </div>
+
+              <div className="bg-graphite-900 border border-graphite-800 rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-graphite-800">
+                  <h3 className="font-display font-semibold text-white">Movimentações</h3>
+                  {podeGerenciar && (
+                    <button
+                      onClick={() => setModalMovimentacao(true)}
+                      className="flex items-center gap-1.5 bg-ember-500 hover:bg-ember-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                    >
+                      <Plus size={14} /> Nova movimentação
+                    </button>
+                  )}
+                </div>
+
+                {movimentacoes.length === 0 ? (
+                  <p className="text-steel-500 text-sm p-6 text-center">Nenhuma movimentação registrada ainda.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-steel-400 border-b border-graphite-800">
+                          <th className="font-medium px-5 py-3">Horário</th>
+                          <th className="font-medium px-5 py-3">Descrição</th>
+                          <th className="font-medium px-5 py-3">Categoria</th>
+                          <th className="font-medium px-5 py-3">Forma</th>
+                          <th className="font-medium px-5 py-3 text-right">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {movimentacoes.map((m) => (
+                          <tr key={m.id} className="border-b border-graphite-800 last:border-0">
+                            <td className="px-5 py-3 text-steel-500 text-xs">{formatarHora(m.created_at)}</td>
+                            <td className="px-5 py-3 text-white">{m.descricao || '-'}</td>
+                            <td className="px-5 py-3 text-steel-400 capitalize">{m.categoria}</td>
+                            <td className="px-5 py-3 text-steel-400">{m.formas_pagamento?.nome || '-'}</td>
+                            <td
+                              className={`px-5 py-3 text-right font-medium tabular ${
+                                m.tipo === 'entrada' ? 'text-mint-400' : 'text-rose-400'
+                              }`}
+                            >
+                              {m.tipo === 'entrada' ? '+' : '-'}
+                              {formatarMoeda(m.valor)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
-              <p className="text-steel-400 text-xs font-medium mb-1">Abertura</p>
-              <p className="font-display text-xl font-semibold text-white tabular">
-                {formatarMoeda(sessao.valor_abertura)}
-              </p>
-            </div>
-            <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
-              <p className="text-steel-400 text-xs font-medium mb-1">Entradas</p>
-              <p className="font-display text-xl font-semibold text-mint-400 tabular">
-                +{formatarMoeda(totalEntradas)}
-              </p>
-            </div>
-            <div className="bg-graphite-900 border border-graphite-800 rounded-2xl p-5">
-              <p className="text-steel-400 text-xs font-medium mb-1">Saídas</p>
-              <p className="font-display text-xl font-semibold text-rose-400 tabular">
-                -{formatarMoeda(totalSaidas)}
-              </p>
-            </div>
-            <div className="bg-graphite-900 border border-ember-500/30 rounded-2xl p-5">
-              <p className="text-ember-400 text-xs font-medium mb-1">Saldo atual</p>
-              <p className="font-display text-xl font-semibold text-white tabular">{formatarMoeda(saldoAtual)}</p>
-            </div>
-          </div>
 
-          <div className="bg-graphite-900 border border-graphite-800 rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-graphite-800">
-              <h3 className="font-display font-semibold text-white">Movimentações</h3>
-              {podeGerenciar && (
-                <button
-                  onClick={() => setModalMovimentacao(true)}
-                  className="flex items-center gap-1.5 bg-ember-500 hover:bg-ember-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  <Plus size={14} /> Nova movimentação
-                </button>
-              )}
-            </div>
-
-            {movimentacoes.length === 0 ? (
-              <p className="text-steel-500 text-sm p-6 text-center">Nenhuma movimentação registrada ainda.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-steel-400 border-b border-graphite-800">
-                    <th className="font-medium px-5 py-3">Horário</th>
-                    <th className="font-medium px-5 py-3">Descrição</th>
-                    <th className="font-medium px-5 py-3">Categoria</th>
-                    <th className="font-medium px-5 py-3">Forma</th>
-                    <th className="font-medium px-5 py-3 text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movimentacoes.map((m) => (
-                    <tr key={m.id} className="border-b border-graphite-800 last:border-0">
-                      <td className="px-5 py-3 text-steel-500 text-xs">{formatarHora(m.created_at)}</td>
-                      <td className="px-5 py-3 text-white">{m.descricao || '-'}</td>
-                      <td className="px-5 py-3 text-steel-400 capitalize">{m.categoria}</td>
-                      <td className="px-5 py-3 text-steel-400">{m.formas_pagamento?.nome || '-'}</td>
-                      <td
-                        className={`px-5 py-3 text-right font-medium tabular ${
-                          m.tipo === 'entrada' ? 'text-mint-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {m.tipo === 'entrada' ? '+' : '-'}
-                        {formatarMoeda(m.valor)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </>
-      )}
+        <div className="lg:col-span-1">
+          <PainelMensalidadesAtrasadas sessaoAberta={Boolean(sessao)} aoCobrar={abrirCobranca} />
+        </div>
+      </div>
 
       <ModalAbrirCaixa aberto={modalAbrir} aoFechar={() => setModalAbrir(false)} aoConfirmar={carregar} />
       <ModalFecharCaixa sessao={modalFechar ? sessao : null} aoFechar={() => setModalFechar(false)} aoConfirmar={carregar} />
       <ModalMovimentacao
         aberto={modalMovimentacao}
         sessaoId={sessao?.id}
-        aoFechar={() => setModalMovimentacao(false)}
-        aoConfirmar={carregar}
+        preSelecionado={cobrancaPreSelecionada}
+        aoFechar={() => {
+          setModalMovimentacao(false);
+          setCobrancaPreSelecionada(null);
+        }}
+        aoConfirmar={() => {
+          carregar();
+          setCobrancaPreSelecionada(null);
+        }}
       />
     </div>
   );

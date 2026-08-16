@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Pencil, Save, X, Phone, Mail, MapPin, HeartPulse, Receipt,
-  Camera, Loader2, AlertTriangle, Wallet, TrendingUp, TrendingDown, Percent,
+  Camera, Loader2, AlertTriangle, Wallet, TrendingUp, TrendingDown, Percent, Fingerprint,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -302,6 +302,11 @@ export default function AlunoPerfil() {
                       .join(', ') || '-'}
                   </span>
                 </div>
+                {aluno.codigo_dispositivo && (
+                  <div className="flex items-center gap-2 text-steel-500 text-xs pt-1">
+                    <Fingerprint size={13} /> Código no leitor biométrico: {aluno.codigo_dispositivo}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -312,6 +317,17 @@ export default function AlunoPerfil() {
                   <input className={inputClasse} placeholder="Número" value={form.numero || ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
                   <input className={inputClasse} placeholder="Bairro" value={form.bairro || ''} onChange={(e) => setForm({ ...form, bairro: e.target.value })} />
                   <input className={inputClasse} placeholder="Cidade" value={form.cidade || ''} onChange={(e) => setForm({ ...form, cidade: e.target.value })} />
+                </div>
+                <div>
+                  <input
+                    className={inputClasse}
+                    placeholder="Código no leitor biométrico (só se necessário)"
+                    value={form.codigo_dispositivo || ''}
+                    onChange={(e) => setForm({ ...form, codigo_dispositivo: e.target.value })}
+                  />
+                  <p className="text-steel-500 text-xs mt-1">
+                    Só preencha se o leitor facial/biométrico identificar por um código numérico diferente do CPF. Veja em Controle de Acesso → Configurar catraca.
+                  </p>
                 </div>
               </div>
             )}

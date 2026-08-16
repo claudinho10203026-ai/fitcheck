@@ -2,13 +2,8 @@ import axios from 'axios';
 
 const CHAVE_TOKEN = 'academia_token';
 
-const envBaseURL = import.meta.env.VITE_API_URL?.trim() || '';
-const baseURL = import.meta.env.MODE === 'development'
-  ? envBaseURL || '/api'
-  : '/api';
-
 const api = axios.create({
-  baseURL,
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
 });
 
 // Anexa o token de login (JWT do nosso backend) em toda requisição.

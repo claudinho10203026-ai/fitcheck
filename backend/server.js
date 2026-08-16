@@ -14,6 +14,8 @@ const caixaRoutes = require('./routes/caixa.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const agendamentosRoutes = require('./routes/agendamentos.routes');
 const acessoRoutes = require('./routes/acesso.routes');
+const dispositivoPushRoutes = require('./routes/dispositivoPush.routes');
+const configuracaoPagamentoRoutes = require('./routes/configuracaoPagamento.routes');
 const webhooksRoutes = require('./routes/webhooks.routes');
 
 if (!process.env.JWT_SECRET) {
@@ -25,21 +27,7 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-const allowedOrigins = (process.env.FRONTEND_URL || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error(`A origem ${origin} não é permitida pelo CORS.`));
-    },
-  })
-);
+app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json({ limit: '8mb' })); // fotos de aluno chegam em base64 no body
 
 // Healthcheck simples (não exige login) - útil para checar se a API está de pé
@@ -57,6 +45,11 @@ app.use('/api/webhooks', webhooksRoutes);
 // não leva o requireAuth aqui; cada sub-rota do arquivo decide por si.
 app.use('/api/acesso', acessoRoutes);
 
+// Sem /api e sem login: alguns leitores biométricos (protocolo ADMS/iClock)
+// têm esses caminhos fixos no firmware e não têm como customizar. Ver
+// backend/routes/dispositivoPush.routes.js para o contexto completo.
+app.use('/iclock', dispositivoPushRoutes);
+
 // A partir daqui, todas as rotas exigem um funcionário autenticado.
 // Cada rota, internamente, também filtra os dados pela academia do
 // funcionário logado e checa a permissão dele na tela (ver middleware/authorize.js).
@@ -68,18 +61,11 @@ app.use('/api/mensalidades', requireAuth, mensalidadesRoutes);
 app.use('/api/caixa', requireAuth, caixaRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
 app.use('/api/agendamentos', requireAuth, agendamentosRoutes);
+app.use('/api/configuracao-pagamento', requireAuth, configuracaoPagamentoRoutes);
 
-const path = require('path');
-
-// 1. Aponta para a pasta onde o build do frontend foi gerado (ex: dist)
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
-
-// 2. Rota SPA: qualquer rota que não seja API deve entregar o frontend
-app.get('*', (req, res) => {
-  if (req.originalUrl.startsWith('/api/')) {
-    return res.status(404).json({ erro: 'Rota não encontrada.' });
-  }
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+// Tratamento de rota não encontrada
+app.use((req, res) => {
+  res.status(404).json({ erro: 'Rota não encontrada.' });
 });
 
 const PORT = process.env.PORT || 3001;

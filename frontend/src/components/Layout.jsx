@@ -12,6 +12,7 @@ import {
   LogOut,
   Dumbbell,
   Fingerprint,
+  CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { temPermissao } from '../lib/permissoes';
@@ -95,6 +96,19 @@ export default function Layout({ children }) {
               >
                 <UserCog size={18} strokeWidth={2} />
                 Funcionários
+              </NavLink>
+              <NavLink
+                to="/configuracao-pagamento"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-ember-500/15 text-ember-400'
+                      : 'text-steel-400 hover:text-white hover:bg-graphite-800'
+                  }`
+                }
+              >
+                <CreditCard size={18} strokeWidth={2} />
+                Gateway de Pagamento
               </NavLink>
             </>
           )}
