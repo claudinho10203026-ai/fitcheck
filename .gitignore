@@ -1,0 +1,20 @@
+# Dependências (cada ambiente reinstala com "npm install")
+node_modules/
+
+# Build do frontend (o Render/servidor gera isso sozinho no deploy,
+# rodando "npm run build" - não deve ficar salvo no repositório, senão
+# o deploy reaproveita uma versão velha em vez de gerar uma nova)
+frontend/dist/
+
+# Variáveis de ambiente com segredos (SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET,
+# senha do banco, chaves de gateway etc.) - NUNCA devem ir pro GitHub.
+# Configure os valores reais direto no Render (aba Environment), não aqui.
+.env
+.env.local
+backend/.env
+frontend/.env
+
+# Editores e SO
+.DS_Store
+.vscode/
+*.log
